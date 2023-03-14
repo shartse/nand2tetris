@@ -1,0 +1,100 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/CPU.hdl
+
+/**
+ * The Hack CPU (Central Processing unit), consisting of an ALU,
+ * two registers named A and D, and a program counter named PC.
+ * The CPU is designed to fetch and execute instructions written in 
+ * the Hack machine language. In particular, functions as follows:
+ * Executes the inputted instruction according to the Hack machine 
+ * language specification. The D and A in the language specification
+ * refer to CPU-resident registers, while M refers to the external
+ * memory location addressed by A, i.e. to Memory[A]. The inM input 
+ * holds the value of this location. If the current instruction needs 
+ * to write a value to M, the value is placed in outM, the address 
+ * of the target location is placed in the addressM output, and the 
+ * writeM control bit is asserted. (When writeM==0, any value may 
+ * appear in outM). The outM and writeM outputs are combinational: 
+ * they are affected instantaneously by the execution of the current 
+ * instruction. The addressM and pc outputs are clocked: although they 
+ * are affected by the execution of the current instruction, they commit 
+ * to their new values only in the next time step. If reset==1 then the 
+ * CPU jumps to address 0 (i.e. pc is set to 0 in next time step) rather 
+ * than to the address resulting from executing the current instruction. 
+ */
+
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+
+/* xxxxxxxxxxxxxxxx
+/* 111accccccdddjjj  */
+/* 1111119876543210  */ 
+/* 543210            */
+
+
+    /* ===  A stuff ==== */
+    /* Is this a A or C instruction? - instruction[15]  - 0 is A, 1 is C */
+    Not(in=instruction[15], out=Ainstr);
+    Not(in=Ainstr, out=Cinstr);
+
+    /* Decide what to send to A - if A instruction, send addr. If not, whatever we got from before */
+    Mux16(a=instruction, b=MuxAin, sel=instruction[15], out=Ain);
+
+    /* If this is and A instruction or the A dest has been set, load into ARegister */
+    Or(a=Ainstr, b=instruction[5], out=intoA);
+    ARegister(in=Ain, load=intoA, out=ARegister, out[0..14]=addressM[0..14], out=pcIn); /* If load[t] == 1 then out[t+1] = in[t] */
+    
+
+    /* === C stuff === */
+    /* If C instr, Set D register from the ALU, chosing to load based on destination bit */
+    And(a=Cinstr, b=instruction[4], out=intoD);
+    DRegister(in=Din, load=intoD, out=DRegister);
+
+    /* decide whether to send the contents of A or inM to the ALU based on 'a' bit */
+    Mux16(a=ARegister, b=inM, sel=instruction[12], out=AorM);
+    /* Fill these in based on the op-codes*/
+    ALU(x=DRegister, y=AorM, zx=instruction[11] , nx=instruction[10] , zy=instruction[9] , ny=instruction[8], f=instruction[7], no=instruction[6], out=outM, out=Din, out=MuxAin, zr=zero, ng=neg);
+	
+    /* Set writeM if this is a C instruction and the dest bit is set */
+    And(a=Cinstr, b=instruction[3], out=writeM);
+
+    /* JMP time */
+    Not(in=zero, out=nonZero);
+    Not(in=neg, out=pos);
+
+    /* If this is a C-intr and the JGT bit is set */
+    And(a=instruction[15], b=instruction[0], out=jgt);
+    /* See if the value is indeed pos and not zero */
+    And(a=pos, b=nonZero, out=posNonZero);
+    And(a=posNonZero, b=jgt, out=jmpJgt);
+
+    /* If this is a C-intr and the JEQ bit is set */
+    And(a=instruction[15], b=instruction[1], out=jeq);
+    /* See if the value is zero */
+    And(a=zero, b=jeq, out=jmpJeq);
+    
+    /* If this is a C-intr and the JLT bit is set */
+    And(a=instruction[15], b=instruction[2], out=jlt);
+    /* See if the value is indeed neq and not zero */
+    And(a=neg, b=nonZero, out=negNonZero);
+    And(a=negNonZero, b=jlt, out=jmpJlt);
+
+    /* Or together all possible reasons for jumping (C-instr, any jmp criteria met) */
+    Or(a=jmpJgt, b=jmpJeq, out=jmpJge);
+    Or(a=jmpJge, b=jmpJlt, out=jmpAll);
+    PC(in=pcIn, load=jmpAll, inc=true, reset=reset, out[0..14]=pc);    
+}
