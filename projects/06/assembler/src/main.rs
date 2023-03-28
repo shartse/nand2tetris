@@ -282,6 +282,7 @@ fn main() {
     for instr in program {
         match instr {
             Program::Label(label) => {
+                println!("Inserting label: {:?}. {:?}", label, idx);
                 symbols.insert(label, idx);
             },
             Program::Instr(instr) => {
@@ -311,7 +312,7 @@ fn main() {
         }
         Instr::C(_, _, _) => i,
     }).collect();
-    
+    println!("Symbols: {:?}", symbols.0); 
     let mut out_file = File::create(out_path).unwrap();
     for instr in literals {
         out_file.write_all(instr.to_binary().as_bytes()).unwrap();
